@@ -1,0 +1,159 @@
+name: "Slop-Mop"
+author: "ScienceIsNeato"
+description: "Run Slop-Mop swab or scour in GitHub Actions with JSON, SARIF, and job-summary output."
+
+branding:
+  icon: "shield"
+  color: "gray-dark"
+
+inputs:
+  command:
+    description: "Slop-Mop validation command to run. Supported values: swab, scour."
+    required: false
+    default: "scour"
+
+  args:
+    description: "Extra arguments passed to sm before the action-managed output flags."
+    required: false
+    default: "--no-auto-fix"
+
+  python-version:
+    description: "Python version used to install and run Slop-Mop."
+    required: false
+    default: "3.12"
+
+  install-extra:
+    description: "Slop-Mop PyPI extra to install."
+    required: false
+    default: "all"
+
+  slopmop-version:
+    description: "Optional Slop-Mop version specifier, such as ==1.2.3 or >=1.2.0."
+    required: false
+    default: ""
+
+  results-file:
+    description: "Path where Slop-Mop JSON results should be written."
+    required: false
+    default: "slopmop-results.json"
+
+  sarif-file:
+    description: "Path where Slop-Mop SARIF should be written."
+    required: false
+    default: "slopmop.sarif"
+
+  upload-sarif:
+    description: "Upload SARIF to GitHub Code Scanning."
+    required: false
+    default: "true"
+
+  sarif-category:
+    description: "Code Scanning category for uploaded SARIF."
+    required: false
+    default: "slopmop"
+
+  strict-sarif-upload:
+    description: "Fail the action if SARIF upload fails."
+    required: false
+    default: "false"
+
+  fail-on-failure:
+    description: "Fail the action when sm exits non-zero."
+    required: false
+    default: "true"
+
+outputs:
+  result:
+    description: "passed or failed, based on the sm exit code."
+    value: ${{ steps.run.outputs.result }}
+
+  exit_code:
+    description: "Raw sm exit code."
+    value: ${{ steps.run.outputs.exit_code }}
+
+  results_file:
+    description: "JSON results file path."
+    value: ${{ steps.run.outputs.results_file }}
+
+  sarif_file:
+    description: "SARIF file path."
+    value: ${{ steps.run.outputs.sarif_file }}
+
+  myopia:
+    description: "Slop-Mop posture label for myopia, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.myopia }}
+
+  deceptiveness:
+    description: "Slop-Mop posture label for deceptiveness, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.deceptiveness }}
+
+  laziness:
+    description: "Slop-Mop posture label for laziness, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.laziness }}
+
+  overconfidence:
+    description: "Slop-Mop posture label for overconfidence, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.overconfidence }}
+
+  posture_json:
+    description: "Compact Slop-Mop posture JSON, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.posture_json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install pipx
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip pipx
+        python -m pipx ensurepath
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Install Slop-Mop
+      shell: bash
+      env:
+        SLOPMOP_EXTRA: ${{ inputs.install-extra }}
+        SLOPMOP_VERSION: ${{ inputs.slopmop-version }}
+      run: |
+        if [[ -n "$SLOPMOP_EXTRA" ]]; then
+          package="slopmop[${SLOPMOP_EXTRA}]${SLOPMOP_VERSION}"
+        else
+          package="slopmop${SLOPMOP_VERSION}"
+        fi
+        python -m pipx install "$package"
+
+    - name: Run Slop-Mop
+      id: run
+      shell: bash
+      env:
+        SLOPMOP_COMMAND: ${{ inputs.command }}
+        SLOPMOP_ARGS: ${{ inputs.args }}
+        SLOPMOP_RESULTS_FILE: ${{ inputs.results-file }}
+        SLOPMOP_SARIF_FILE: ${{ inputs.sarif-file }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run-slopmop.sh"
+
+    - name: Upload SARIF
+      if: ${{ always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif_exists == 'true' }}
+      uses: github/codeql-action/upload-sarif@v4
+      continue-on-error: ${{ inputs.strict-sarif-upload != 'true' }}
+      with:
+        sarif_file: ${{ steps.run.outputs.sarif_file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Enforce Slop-Mop verdict
+      if: ${{ always() }}
+      shell: bash
+      env:
+        SLOPMOP_EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+        SLOPMOP_FAIL_ON_FAILURE: ${{ inputs.fail-on-failure }}
+      run: |
+        exit_code="${SLOPMOP_EXIT_CODE:-1}"
+        if [[ "$SLOPMOP_FAIL_ON_FAILURE" == "true" && "$exit_code" != "0" ]]; then
+          echo "::error::Slop-Mop failed with exit code ${exit_code}."
+          exit "$exit_code"
+        fi

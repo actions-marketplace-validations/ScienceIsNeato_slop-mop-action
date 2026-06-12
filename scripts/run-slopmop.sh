@@ -50,6 +50,7 @@ fi
 python "$GITHUB_ACTION_PATH/scripts/collect-outputs.py" \
   --exit-code "$exit_code" \
   --results-file "$results_file" \
-  --sarif-file "$sarif_file"
+  --sarif-file "$sarif_file" \
+  --minimum-grade "${SLOPMOP_MINIMUM_GRADE:-}"
 
 exit 0

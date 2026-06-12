@@ -1,6 +1,6 @@
 name: "Slop-Mop"
 author: "ScienceIsNeato"
-description: "Run Slop-Mop swab or scour in GitHub Actions with JSON, SARIF, and job-summary output."
+description: "Run Slop-Mop swab or scour in GitHub Actions with hull grade, SARIF, JSON, and job-summary output."
 
 branding:
   icon: "shield"
@@ -28,7 +28,7 @@ inputs:
     default: "all"
 
   slopmop-version:
-    description: "Optional Slop-Mop version specifier, such as ==1.2.3 or >=1.2.0."
+    description: "Optional Slop-Mop version specifier, such as ==2.5.0 or >=2.5.0. Hull grades require slopmop >= 2.5.0."
     required: false
     default: ""
 
@@ -62,6 +62,14 @@ inputs:
     required: false
     default: "true"
 
+  minimum-grade:
+    description: >-
+      Fail the action when the hull grade is worse than this letter
+      (A+, A, B, C, D, F). Empty disables grade enforcement. N/A
+      (dry-dock, repo not initialized) never fails the threshold.
+    required: false
+    default: ""
+
 outputs:
   result:
     description: "passed or failed, based on the sm exit code."
@@ -79,31 +87,39 @@ outputs:
     description: "SARIF file path."
     value: ${{ steps.run.outputs.sarif_file }}
 
-  myopia:
-    description: "Slop-Mop posture label for myopia, when emitted by Slop-Mop."
-    value: ${{ steps.run.outputs.myopia }}
+  grade:
+    description: "Hull grade letter: A+, A, B, C, D, F, or N/A. Empty when slopmop did not emit a grade."
+    value: ${{ steps.run.outputs.grade }}
 
-  deceptiveness:
-    description: "Slop-Mop posture label for deceptiveness, when emitted by Slop-Mop."
-    value: ${{ steps.run.outputs.deceptiveness }}
+  hull:
+    description: "Hull condition name: shipshape, seaworthy, serviceable, weathered, fouled, scuttled, or dry-dock."
+    value: ${{ steps.run.outputs.hull }}
 
-  laziness:
-    description: "Slop-Mop posture label for laziness, when emitted by Slop-Mop."
-    value: ${{ steps.run.outputs.laziness }}
+  failing:
+    description: "Number of failing gates counted toward the grade."
+    value: ${{ steps.run.outputs.failing }}
 
-  overconfidence:
-    description: "Slop-Mop posture label for overconfidence, when emitted by Slop-Mop."
-    value: ${{ steps.run.outputs.overconfidence }}
+  warned:
+    description: "Number of warned gates."
+    value: ${{ steps.run.outputs.warned }}
 
-  posture_json:
-    description: "Compact Slop-Mop posture JSON, when emitted by Slop-Mop."
-    value: ${{ steps.run.outputs.posture_json }}
+  provisional:
+    description: "true when operational skips (missing tool, fail-fast, time budget) may have hidden failing gates."
+    value: ${{ steps.run.outputs.provisional }}
+
+  hull_grade_json:
+    description: "Compact hull_grade JSON object, when emitted by Slop-Mop."
+    value: ${{ steps.run.outputs.hull_grade_json }}
+
+  grade_met:
+    description: "true/false when minimum-grade is set and the grade is comparable; empty otherwise."
+    value: ${{ steps.run.outputs.grade_met }}
 
 runs:
   using: "composite"
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -135,11 +151,12 @@ runs:
         SLOPMOP_ARGS: ${{ inputs.args }}
         SLOPMOP_RESULTS_FILE: ${{ inputs.results-file }}
         SLOPMOP_SARIF_FILE: ${{ inputs.sarif-file }}
+        SLOPMOP_MINIMUM_GRADE: ${{ inputs.minimum-grade }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-slopmop.sh"
 
     - name: Upload SARIF
       if: ${{ always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif_exists == 'true' }}
-      uses: github/codeql-action/upload-sarif@v4
+      uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
       continue-on-error: ${{ inputs.strict-sarif-upload != 'true' }}
       with:
         sarif_file: ${{ steps.run.outputs.sarif_file }}
@@ -151,9 +168,16 @@ runs:
       env:
         SLOPMOP_EXIT_CODE: ${{ steps.run.outputs.exit_code }}
         SLOPMOP_FAIL_ON_FAILURE: ${{ inputs.fail-on-failure }}
+        SLOPMOP_GRADE: ${{ steps.run.outputs.grade }}
+        SLOPMOP_GRADE_MET: ${{ steps.run.outputs.grade_met }}
+        SLOPMOP_MINIMUM_GRADE: ${{ inputs.minimum-grade }}
       run: |
         exit_code="${SLOPMOP_EXIT_CODE:-1}"
         if [[ "$SLOPMOP_FAIL_ON_FAILURE" == "true" && "$exit_code" != "0" ]]; then
           echo "::error::Slop-Mop failed with exit code ${exit_code}."
           exit "$exit_code"
+        fi
+        if [[ "$SLOPMOP_GRADE_MET" == "false" ]]; then
+          echo "::error::Hull grade ${SLOPMOP_GRADE} is below the configured minimum (${SLOPMOP_MINIMUM_GRADE})."
+          exit 1
         fi

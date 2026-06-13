@@ -65,8 +65,10 @@ inputs:
   minimum-grade:
     description: >-
       Fail the action when the hull grade is worse than this letter
-      (A+, A, B, C, D, F). Empty disables grade enforcement. N/A
-      (dry-dock, repo not initialized) never fails the threshold.
+      (A+, A, B, C, D, F). Empty disables grade enforcement. A non-empty
+      value that isn't one of those letters fails the action as a
+      misconfiguration. N/A (dry-dock, repo not initialized) never fails
+      the threshold.
     required: false
     default: ""
 

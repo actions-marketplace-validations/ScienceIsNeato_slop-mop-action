@@ -52,5 +52,13 @@ python "$GITHUB_ACTION_PATH/scripts/collect-outputs.py" \
   --results-file "$results_file" \
   --sarif-file "$sarif_file" \
   --minimum-grade "${SLOPMOP_MINIMUM_GRADE:-}"
+collect_rc=$?
+
+# A nonzero collector exit is a config error (e.g. an invalid
+# minimum-grade), not a gate result — surface it so the action fails
+# loudly instead of proceeding with the gate verdict.
+if [[ "$collect_rc" != "0" ]]; then
+  exit "$collect_rc"
+fi
 
 exit 0

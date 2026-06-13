@@ -189,6 +189,17 @@ def main() -> int:
 
     grade_letter = str(grade.get("grade", ""))
     minimum = args.minimum_grade.strip()
+
+    # A non-empty minimum-grade that isn't a real grade is a workflow
+    # misconfiguration, not "enforcement off". Fail loudly rather than
+    # silently letting a typo (e.g. "b", "A-") bypass the threshold.
+    if minimum and minimum not in GRADE_ORDER:
+        print(
+            f"::error::Invalid minimum-grade '{minimum}'. "
+            f"Expected one of: {', '.join(GRADE_ORDER)}."
+        )
+        return 2
+
     grade_met = _grade_meets_minimum(grade_letter, minimum)
 
     _write_output("exit_code", str(args.exit_code))

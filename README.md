@@ -101,7 +101,7 @@ Use the grade downstream:
 | `args` | `--no-auto-fix` | Extra arguments passed to `sm` before action-managed output flags. |
 | `python-version` | `3.12` | Python version used by `actions/setup-python`. |
 | `install-extra` | `all` | PyPI extra installed as `slopmop[extra]`. |
-| `slopmop-version` | empty | Optional version specifier, for example `>=2.5.0`. |
+| `slopmop-version` | empty | Optional version specifier, for example `>=2.5.0`. Pin it (e.g. `==2.6.0`) for predictable install caching — see [Gate tools & caching](#gate-tools--caching). |
 | `results-file` | `slopmop-results.json` | JSON results file path. |
 | `sarif-file` | `slopmop.sarif` | SARIF file path. |
 | `upload-sarif` | `true` | Upload SARIF with `github/codeql-action/upload-sarif`. |
@@ -125,6 +125,26 @@ Use the grade downstream:
 | `provisional` | `true` when operational skips may have hidden failing gates. |
 | `hull_grade_json` | Compact `hull_grade` JSON object. |
 | `grade_met` | `true`/`false` when `minimum-grade` is set and comparable; empty otherwise. |
+
+## Gate tools & caching
+
+Several gates wrap off-the-shelf tools — `flake8`, `black`, `vulture`, `radon`
+(Python), and `find-duplicate-strings` (Node). The action installs them so the
+gates actually run instead of warning and passing:
+
+- Slop-Mop is installed with `pipx install --include-deps`, which exposes the
+  Python tools' console scripts on `PATH` (plain `pipx install` only exposes
+  `sm`).
+- Node is set up and `find-duplicate-strings` is installed globally for the
+  `myopia:string-duplication` gate.
+- The whole install (pipx venv + Node tool) is cached with `actions/cache`,
+  keyed on OS + resolved Python version + extra + `slopmop-version`, so a
+  cache hit skips reinstallation entirely.
+
+**Pin `slopmop-version`** (e.g. `==2.6.0`) for predictable caching: with the
+version left empty the cache key is constant, so a cache hit keeps serving
+whatever Slop-Mop was latest when the cache was first built. Pinning makes the
+cache refresh exactly when you bump the version.
 
 ## SARIF
 

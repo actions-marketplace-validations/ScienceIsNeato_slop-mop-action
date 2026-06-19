@@ -28,9 +28,9 @@ inputs:
     default: "all"
 
   slopmop-version:
-    description: "Optional Slop-Mop version specifier, such as ==2.5.0 or >=2.5.0. Hull grades require slopmop >= 2.5.0."
+    description: "Slop-Mop version specifier, such as ==2.6.0 or >=2.5.0. Pinned by default so the install cache is deterministic; the Slop-Mop release workflow bumps this on each release. Override to track a different version."
     required: false
-    default: ""
+    default: "==2.5.0"
 
   results-file:
     description: "Path where Slop-Mop JSON results should be written."

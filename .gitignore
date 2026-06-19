@@ -2,3 +2,6 @@ slopmop-results.json
 slopmop.sarif
 __pycache__/
 .DS_Store
+
+# SpecStory AI history artifacts (local tooling)
+.specstory/

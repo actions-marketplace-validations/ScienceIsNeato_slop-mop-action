@@ -1,7 +1,7 @@
 {
   "agent": {
-    "status": "Wired the action to the new hull grades — runs grade the repo A+ through F right in the job summary",
-    "direction": "Land the grade integration, then publish v1 to the Marketplace once slop-mop ships the grade in a release",
-    "last_update": "2026-06-12T22:00:00Z"
+    "status": "Making the action actually install the tools its checks need, instead of quietly skipping checks when a tool is missing — and caching the install so it doesn't redo it every run",
+    "direction": "Land this so CI runs every check for real, then keep an eye on the dogfood run",
+    "last_update": "2026-06-17T00:00:00Z"
   }
 }

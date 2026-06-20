@@ -1,7 +1,7 @@
 {
   "agent": {
-    "status": "Making the action actually install the tools its checks need, instead of quietly skipping checks when a tool is missing — and caching the install so it doesn't redo it every run",
-    "direction": "Land this so CI runs every check for real, then keep an eye on the dogfood run",
-    "last_update": "2026-06-17T00:00:00Z"
+    "status": "Building v2 of the action so it installs exactly the tools the repo's config needs, read from a committed list, and flags that list if it's gone stale",
+    "direction": "Make CI installs deterministic and auditable instead of grabbing everything every time",
+    "last_update": "2026-06-20T00:00:00Z"
   }
 }

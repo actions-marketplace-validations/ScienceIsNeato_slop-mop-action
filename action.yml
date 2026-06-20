@@ -23,14 +23,35 @@ inputs:
     default: "3.12"
 
   install-extra:
-    description: "Slop-Mop PyPI extra to install."
+    description: >-
+      Slop-Mop PyPI extra to install alongside core. Empty by default in v2:
+      gate tools are installed from the committed dependency manifest by exact
+      pin, so the broad `all` extra is no longer needed. Set to e.g. `all` to
+      restore the v1 install-everything behaviour.
     required: false
-    default: "all"
+    default: ""
 
   slopmop-version:
-    description: "Slop-Mop version specifier, such as ==2.6.0 or >=2.5.0. Pinned by default so the install cache is deterministic; the Slop-Mop release workflow bumps this on each release. Override to track a different version."
+    description: "Slop-Mop version specifier, such as ==2.9.0 or >=2.9.0. Pinned by default so the install cache is deterministic; the Slop-Mop release workflow bumps this on each release. Must be a version that supports `sm doctor --required-deps`."
     required: false
-    default: "==2.5.0"
+    default: "==2.9.0"
+
+  manifest-file:
+    description: >-
+      Path to the committed dependency manifest produced by
+      `sm doctor --required-deps`. The action installs exactly the tools it
+      lists, by exact pin. Generate/refresh it with:
+      `sm doctor --required-deps > .slopmop/required-deps.json`.
+    required: false
+    default: ".slopmop/required-deps.json"
+
+  verify-manifest:
+    description: >-
+      Fail the run when the committed manifest has drifted from the repo's live
+      gate config (a tool was added/removed/repinned but the manifest wasn't
+      regenerated). Keeps the committed artifact honest.
+    required: false
+    default: "true"
 
   results-file:
     description: "Path where Slop-Mop JSON results should be written."
@@ -142,6 +163,7 @@ runs:
       env:
         SLOPMOP_EXTRA: ${{ inputs.install-extra }}
         SLOPMOP_VERSION: ${{ inputs.slopmop-version }}
+        MANIFEST_FILE: ${{ inputs.manifest-file }}
       run: |
         pyver="$(python -c 'import platform; print(platform.python_version())')"
         # Hash of the interpreter's absolute path: a cached pipx venv hardcodes
@@ -149,11 +171,20 @@ runs:
         # or self-hosted runner) the key must change or the restored shebangs
         # point at a missing interpreter.
         pyhash="$(python -c 'import sys,hashlib; print(hashlib.sha256(sys.executable.encode()).hexdigest()[:12])')"
+        # The cached venv holds the tools injected from the manifest, so the key
+        # must change when the manifest does — otherwise a tool repin/add/remove
+        # would restore a stale toolset. Hash the committed manifest (empty hash
+        # when absent, so the key is still stable).
+        if [[ -f "$MANIFEST_FILE" ]]; then
+          manhash="$(python -c 'import sys,hashlib; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:12])' "$MANIFEST_FILE")"
+        else
+          manhash="nomanifest"
+        fi
         {
           echo "pipx_home=${HOME}/.slopmop/pipx"
           echo "pipx_bin=${HOME}/.slopmop/bin"
           echo "npm_prefix=${HOME}/.slopmop/npm"
-          echo "key=slopmop-install-${RUNNER_OS}-${RUNNER_ARCH}-py${pyver}-${pyhash}-x_${SLOPMOP_EXTRA:-none}-v_${SLOPMOP_VERSION:-latest}-n1"
+          echo "key=slopmop-install-${RUNNER_OS}-${RUNNER_ARCH}-py${pyver}-${pyhash}-x_${SLOPMOP_EXTRA:-none}-v_${SLOPMOP_VERSION:-latest}-m_${manhash}-v2"
         } >> "$GITHUB_OUTPUT"
 
     # restore/save are split (not the combined cache action) so the install is
@@ -169,33 +200,37 @@ runs:
           ${{ steps.cachekey.outputs.npm_prefix }}
         key: ${{ steps.cachekey.outputs.key }}
 
-    # Only runs on a cache miss. With an unpinned slopmop-version the key stays
-    # constant, so the cache holds whatever was latest when first built — pin
-    # slopmop-version (e.g. ==2.6.0) for predictable, refresh-on-bump behaviour.
+    # Only runs on a cache miss. The cache key includes the manifest hash, so a
+    # tool repin/add/remove invalidates it and re-installs; pin slopmop-version
+    # for predictable, refresh-on-bump behaviour of slop-mop itself.
     - name: Install Slop-Mop and gate tools
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         SLOPMOP_EXTRA: ${{ inputs.install-extra }}
         SLOPMOP_VERSION: ${{ inputs.slopmop-version }}
+        MANIFEST_FILE: ${{ inputs.manifest-file }}
         PIPX_HOME: ${{ steps.cachekey.outputs.pipx_home }}
         PIPX_BIN_DIR: ${{ steps.cachekey.outputs.pipx_bin }}
         NPM_PREFIX: ${{ steps.cachekey.outputs.npm_prefix }}
       run: |
         python -m pip install --upgrade pip pipx
+        # v2 installs slop-mop CORE; gate tools come from the committed manifest
+        # by exact pin (see install-deps.sh), not the broad `[all]` extra.
         if [[ -n "$SLOPMOP_EXTRA" ]]; then
           package="slopmop[${SLOPMOP_EXTRA}]${SLOPMOP_VERSION}"
         else
           package="slopmop${SLOPMOP_VERSION}"
         fi
-        # --include-deps exposes dependency console scripts (flake8, black,
-        # vulture, radon, …) so the gates that shell out to them actually run
-        # instead of warning/failing on a missing tool.
-        python -m pipx install --include-deps "$package"
-        # Node-based tool for the string-duplication gate. --prefix (not
-        # `npm config set`) keeps the install local and avoids mutating the
-        # runner's npm config; the version is pinned for a deterministic cache.
-        npm install --global --prefix "$NPM_PREFIX" find-duplicate-strings@3.1.1
+        python -m pipx install "$package"
+        # PATH is needed now so install-deps.sh can `pipx inject` into the venv.
+        export PATH="${PIPX_BIN_DIR}:${PATH}"
+        if [[ -f "$MANIFEST_FILE" ]]; then
+          PIPX_VENV=slopmop NPM_PREFIX="$NPM_PREFIX" MANIFEST_FILE="$MANIFEST_FILE" \
+            bash "$GITHUB_ACTION_PATH/scripts/install-deps.sh"
+        else
+          echo "::warning::No manifest at ${MANIFEST_FILE}; gates needing external tools will warn-and-skip. Generate one with 'sm doctor --required-deps > ${MANIFEST_FILE}'."
+        fi
 
     - name: Save Slop-Mop install cache
       if: steps.cache.outputs.cache-hit != 'true'
@@ -213,6 +248,21 @@ runs:
       run: |
         echo "${{ steps.cachekey.outputs.pipx_bin }}" >> "$GITHUB_PATH"
         echo "${{ steps.cachekey.outputs.npm_prefix }}/bin" >> "$GITHUB_PATH"
+
+    # Drift guard: the committed manifest must match the repo's live gate config.
+    # Runs on every invocation (cache hit or miss) since a stale commit is a
+    # stale commit regardless of caching. Needs only `sm` (not the gate tools).
+    - name: Verify manifest is current
+      if: ${{ inputs.verify-manifest == 'true' }}
+      shell: bash
+      env:
+        MANIFEST_FILE: ${{ inputs.manifest-file }}
+      run: |
+        if [[ -f "$MANIFEST_FILE" ]]; then
+          bash "$GITHUB_ACTION_PATH/scripts/verify-manifest.sh"
+        else
+          echo "::warning::verify-manifest is on but no manifest at ${MANIFEST_FILE}; nothing to verify."
+        fi
 
     - name: Run Slop-Mop
       id: run

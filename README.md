@@ -100,8 +100,10 @@ Use the grade downstream:
 | `command` | `scour` | Slop-Mop validation command. Supported values: `swab`, `scour`. |
 | `args` | `--no-auto-fix` | Extra arguments passed to `sm` before action-managed output flags. |
 | `python-version` | `3.12` | Python version used by `actions/setup-python`. |
-| `install-extra` | `all` | PyPI extra installed as `slopmop[extra]`. |
-| `slopmop-version` | `==2.5.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Override (e.g. `>=2.5.0`) to track a range. See [Gate tools & caching](#gate-tools--caching). |
+| `install-extra` | empty | PyPI extra installed as `slopmop[extra]`. Empty in v2 — gate tools come from the committed manifest, not the broad `all` extra. Set `all` for v1 install-everything behaviour. |
+| `slopmop-version` | `==2.9.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
+| `manifest-file` | `.slopmop/required-deps.json` | Committed dependency manifest from `sm doctor --required-deps`. The action installs exactly the tools it lists, by exact pin. |
+| `verify-manifest` | `true` | Fail the run when the committed manifest has drifted from the repo's live gate config. |
 | `results-file` | `slopmop-results.json` | JSON results file path. |
 | `sarif-file` | `slopmop.sarif` | SARIF file path. |
 | `upload-sarif` | `true` | Upload SARIF with `github/codeql-action/upload-sarif`. |
@@ -128,18 +130,33 @@ Use the grade downstream:
 
 ## Gate tools & caching
 
-Several gates wrap off-the-shelf tools — `flake8`, `black`, `vulture`, `radon`
-(Python), and `find-duplicate-strings` (Node). The action installs them so the
-gates actually run instead of warning and passing:
+Several gates wrap off-the-shelf tools — `flake8`, `black`, `vulture`, `radon`,
+`mypy`, `pyright`, `bandit`, … In **v2** the action installs exactly the tools
+your repo's gate config needs — by exact pin — from a committed dependency
+manifest, instead of pulling the whole `slopmop[all]` extra:
 
-- Slop-Mop is installed with `pipx install --include-deps`, which exposes the
-  Python tools' console scripts on `PATH` (plain `pipx install` only exposes
-  `sm`).
-- Node is set up and `find-duplicate-strings` is installed globally for the
-  `myopia:string-duplication` gate.
-- The whole install (pipx venv + Node tool) is cached with `actions/cache`,
-  keyed on OS + resolved Python version + extra + `slopmop-version`, so a
-  cache hit skips reinstallation entirely.
+- **Generate the manifest once** (and after any gate-config change):
+
+  ```bash
+  sm doctor --required-deps > .slopmop/required-deps.json
+  ```
+
+  Commit that file. It's the schema-versioned union of every enabled gate's
+  declared requirements (tool name, install channel, exact pin) — the single
+  source of truth for what CI installs.
+
+- The action installs `slopmop` **core**, then reads the manifest and installs
+  each tool by channel: Python tools are injected into Slop-Mop's pipx venv with
+  `--include-apps` (exposing their console scripts on `PATH` *and* making them
+  importable); npm tools install globally under a local prefix; system runtimes
+  (`node`, etc.) are expected from a `setup-*` step and warned about if missing.
+- **Drift guard:** with `verify-manifest: true` (default) the action re-emits the
+  live manifest and fails if the committed file is stale — so the auditable
+  artifact can't silently fall out of sync. Regenerate and recommit to fix.
+- The whole install (pipx venv + injected tools + any npm tools) is cached with
+  `actions/cache`, keyed on OS + resolved Python version + extra +
+  `slopmop-version` + **a hash of the manifest**, so a tool repin/add/remove
+  invalidates the cache and a plain cache hit skips reinstallation entirely.
 
 `slopmop-version` is **pinned by default** (and part of the cache key), so the
 cache refreshes exactly when the pin changes. The Slop-Mop release workflow

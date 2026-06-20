@@ -42,8 +42,11 @@ command -v jq >/dev/null 2>&1 || fail "jq is required to parse the manifest."
 
 schema="$(jq -r '.schema_version // empty' "$MANIFEST_FILE")"
 [[ -n "$schema" ]] || fail "Manifest ${MANIFEST_FILE} has no schema_version — is it a valid required-deps document?"
+# Fail closed: an unrecognised schema may encode install semantics this action
+# doesn't implement, so guessing could install the wrong toolset and break the
+# deterministic contract. Refuse rather than proceed best-effort.
 if [[ "$schema" != "1" ]]; then
-  echo "::warning::Manifest schema_version ${schema} is newer than this action understands (1). Installing best-effort."
+  fail "Manifest schema_version ${schema} is unsupported by this action (supports: 1). Upgrade the action to a version that understands schema ${schema}."
 fi
 
 run() {

@@ -30,7 +30,9 @@ command -v sm >/dev/null 2>&1 || fail "sm not on PATH — cannot emit the live m
 
 live="$(mktemp)"
 trap 'rm -f "$live"' EXIT
-sm doctor --required-deps >"$live" 2>/dev/null || fail "sm doctor --required-deps failed — is slop-mop new enough to support it?"
+# stdout is the JSON manifest (captured); stderr flows to the step log so a
+# real config/runtime failure is visible instead of swallowed.
+sm doctor --required-deps >"$live" || fail "sm doctor --required-deps failed (see stderr above) — is slop-mop new enough to support it?"
 
 if diff -u <(jq -S . "$MANIFEST_FILE") <(jq -S . "$live"); then
   echo "Committed manifest is in sync with the repo's gate config."

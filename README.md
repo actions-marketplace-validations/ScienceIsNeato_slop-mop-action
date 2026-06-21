@@ -101,7 +101,7 @@ Use the grade downstream:
 | `args` | `--no-auto-fix` | Extra arguments passed to `sm` before action-managed output flags. |
 | `python-version` | `3.12` | Python version used by `actions/setup-python`. |
 | `install-extra` | empty | PyPI extra installed as `slopmop[extra]`. Empty in v2 — gate tools come from the committed manifest, not the broad `all` extra. Set `all` for v1 install-everything behaviour. |
-| `slopmop-version` | `==2.10.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
+| `slopmop-version` | `==2.11.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
 | `manifest-file` | `.slopmop/required-deps.json` | Committed dependency manifest from `sm doctor --required-deps`. The action installs exactly the tools it lists, by exact pin. |
 | `verify-manifest` | `true` | Fail the run when the committed manifest has drifted from the repo's live gate config. |
 | `results-file` | `slopmop-results.json` | JSON results file path. |

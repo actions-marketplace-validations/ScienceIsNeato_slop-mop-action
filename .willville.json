@@ -1,7 +1,7 @@
 {
   "agent": {
-    "status": "Pointing the action at the new slop-mop release and clearing a deprecation warning on one of the steps it uses",
-    "direction": "Cut a fresh v2 so the dogfood run comes back fully clean",
+    "status": "Pointing the action at the newest slop-mop release so its dependency list picks up the duplicate-string scanner",
+    "direction": "Cut a fresh v2 and confirm the dogfood run is finally warning-free",
     "last_update": "2026-06-21T00:00:00Z"
   }
 }

@@ -32,9 +32,9 @@ inputs:
     default: ""
 
   slopmop-version:
-    description: "Slop-Mop version specifier, such as ==2.10.0 or >=2.10.0. Pinned by default so the install cache is deterministic; the Slop-Mop release workflow bumps this on each release. Must be a version that supports `sm doctor --required-deps`."
+    description: "Slop-Mop version specifier, such as ==2.11.0 or >=2.11.0. Pinned by default so the install cache is deterministic; the Slop-Mop release workflow bumps this on each release. Must be a version that supports `sm doctor --required-deps`."
     required: false
-    default: "==2.10.0"
+    default: "==2.11.0"
 
   manifest-file:
     description: >-

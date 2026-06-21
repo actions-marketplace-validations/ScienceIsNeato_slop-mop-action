@@ -1,7 +1,7 @@
 {
   "agent": {
-    "status": "Building v2 of the action so it installs exactly the tools the repo's config needs, read from a committed list, and flags that list if it's gone stale",
-    "direction": "Make CI installs deterministic and auditable instead of grabbing everything every time",
-    "last_update": "2026-06-20T00:00:00Z"
+    "status": "Pointing the action at the new slop-mop release and clearing a deprecation warning on one of the steps it uses",
+    "direction": "Cut a fresh v2 so the dogfood run comes back fully clean",
+    "last_update": "2026-06-21T00:00:00Z"
   }
 }

@@ -53,6 +53,19 @@ inputs:
     required: false
     default: "true"
 
+  project-install:
+    description: >-
+      Optional shell command that installs the TARGET PROJECT's own
+      dependencies before scanning (e.g. `python -m venv venv &&
+      ./venv/bin/pip install -e ".[all]"`). The action installs slop-mop and
+      its gate tools — not your project's deps — but type-aware gates
+      (pyright/mypy) and dependency auditing resolve against the project
+      environment (./venv, ./.venv, or $VIRTUAL_ENV). Without it those gates
+      may report phantom unknown-type findings or audit the wrong dependency
+      set. Leave empty if your workflow already provisions the environment.
+    required: false
+    default: ""
+
   results-file:
     description: "Path where Slop-Mop JSON results should be written."
     required: false
@@ -263,6 +276,21 @@ runs:
         else
           echo "::warning::verify-manifest is on but no manifest at ${MANIFEST_FILE}; nothing to verify."
         fi
+
+    # Type-aware gates and dependency auditing analyze against the project's
+    # own environment (./venv, ./.venv, or $VIRTUAL_ENV) — which the action
+    # deliberately does not provision. When the consumer supplies a command,
+    # run it here so the gates see real imports/deps instead of silently
+    # analyzing the wrong environment. Passed via env to avoid template
+    # injection into the script body.
+    - name: Install project dependencies
+      if: ${{ inputs.project-install != '' }}
+      shell: bash
+      env:
+        PROJECT_INSTALL: ${{ inputs.project-install }}
+      run: |
+        set -euo pipefail
+        bash -ec "$PROJECT_INSTALL"
 
     - name: Run Slop-Mop
       id: run

@@ -1,0 +1,121 @@
+# Weekly adoption snapshot: how many repos use this action?
+#
+# Two complementary counts, appended to metrics/usage-history.jsonl so the
+# trend is a committed, diffable time series (PyPI downloads stopped being a
+# usable adoption proxy once the action started caching installs):
+#
+# - code_search_repos: public repos whose .github/workflows reference
+#   "ScienceIsNeato/slop-mop-action" (GitHub code-search API). Public only —
+#   private consumers are invisible to both sources.
+# - dependents_repos: the dependency-graph "Used by" count from the network/
+#   dependents page (no official API; parsed best-effort from the HTML and
+#   recorded as null when the parse fails rather than guessing).
+#
+# Also refreshes metrics/usage-badge.json (a shields.io endpoint) so the
+# README can show "used by N repos" without any external service.
+name: Usage Metrics
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC — off the top-of-hour stampede
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: true
+
+      - name: Collect usage counts
+        id: collect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Public repos referencing the action in workflow files.
+          search_json=$(gh api "search/code?q=%22ScienceIsNeato%2Fslop-mop-action%22+path%3A.github%2Fworkflows&per_page=100" 2>/dev/null || echo '{}')
+          repos=$(echo "$search_json" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          names = sorted({i['repository']['full_name'] for i in d.get('items', [])})
+          print(json.dumps(names))
+          ")
+          count=$(echo "$repos" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+          # Dependency-graph dependents (best-effort HTML parse; null on miss).
+          dependents=$(curl -fsSL "https://github.com/ScienceIsNeato/slop-mop-action/network/dependents" 2>/dev/null \
+            | grep -oE '[0-9,]+[[:space:]]+Repositor(y|ies)' | head -1 | grep -oE '[0-9,]+' | tr -d ',' || true)
+          dependents=${dependents:-null}
+
+          {
+            echo "repos=$repos"
+            echo "count=$count"
+            echo "dependents=$dependents"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Append history + refresh badge
+        env:
+          REPOS: ${{ steps.collect.outputs.repos }}
+          COUNT: ${{ steps.collect.outputs.count }}
+          DEPENDENTS: ${{ steps.collect.outputs.dependents }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, datetime
+
+          entry = {
+              "date": datetime.date.today().isoformat(),
+              "code_search_repos": int(os.environ["COUNT"]),
+              "dependents_repos": (
+                  None
+                  if os.environ["DEPENDENTS"] == "null"
+                  else int(os.environ["DEPENDENTS"])
+              ),
+              "repos": json.loads(os.environ["REPOS"]),
+          }
+          with open("metrics/usage-history.jsonl", "a", encoding="utf-8") as f:
+              f.write(json.dumps(entry) + "\n")
+
+          # shields.io endpoint schema — the README badge reads this file.
+          best = max(
+              entry["code_search_repos"], entry["dependents_repos"] or 0
+          )
+          badge = {
+              "schemaVersion": 1,
+              "label": "used by",
+              "message": f"{best} repos",
+              "color": "blue",
+          }
+          with open("metrics/usage-badge.json", "w", encoding="utf-8") as f:
+              json.dump(badge, f, indent=2)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write(
+                      f"## Usage snapshot {entry['date']}\n\n"
+                      f"- Code-search consumers (public): **{entry['code_search_repos']}**\n"
+                      f"- Dependency-graph dependents: **{entry['dependents_repos']}**\n\n"
+                      + "\n".join(f"- {r}" for r in entry["repos"])
+                      + "\n"
+                  )
+          PY
+
+      - name: Commit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add metrics/
+          if git diff --cached --quiet; then
+            echo "No metrics change to commit."
+            exit 0
+          fi
+          git commit -m "chore(metrics): weekly usage snapshot"
+          git push

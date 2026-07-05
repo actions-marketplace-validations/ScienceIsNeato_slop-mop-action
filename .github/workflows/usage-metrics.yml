@@ -5,11 +5,15 @@
 # usable adoption proxy once the action started caching installs):
 #
 # - code_search_repos: public repos whose .github/workflows reference
-#   "ScienceIsNeato/slop-mop-action" (GitHub code-search API). Public only —
-#   private consumers are invisible to both sources.
+#   "ScienceIsNeato/slop-mop-action" (GitHub code-search API, paginated).
+#   Public only — private consumers are invisible to both sources.
 # - dependents_repos: the dependency-graph "Used by" count from the network/
 #   dependents page (no official API; parsed best-effort from the HTML and
 #   recorded as null when the parse fails rather than guessing).
+#
+# A search-API failure fails the run (nothing committed) — a transient error
+# must never be recorded as "zero users". Re-runs on the same date replace
+# that date's entry instead of duplicating it.
 #
 # Also refreshes metrics/usage-badge.json (a shields.io endpoint) so the
 # README can show "used by N repos" without any external service.
@@ -20,12 +24,19 @@ on:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC — off the top-of-hour stampede
   workflow_dispatch:
 
-permissions:
-  contents: write
+# The job commits back to main; overlapping runs (manual dispatch near the
+# schedule, or reruns) would race the final git push into non-fast-forward
+# failures. Serialize without cancelling — each snapshot should complete.
+concurrency:
+  group: usage-metrics
+  cancel-in-progress: false
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    # Job-scoped (least privilege): only this job needs to push the snapshot.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -38,17 +49,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Public repos referencing the action in workflow files.
-          search_json=$(gh api "search/code?q=%22ScienceIsNeato%2Fslop-mop-action%22+path%3A.github%2Fworkflows&per_page=100" 2>/dev/null || echo '{}')
+          # Public repos referencing the action in workflow files. --paginate
+          # walks all pages (search API caps at 1000 results — far beyond
+          # current scale; revisit with a since-qualifier sharding scheme if
+          # we ever get near it). A failure here exits non-zero and fails the
+          # run: a transient API error must never be committed as 0 users.
+          search_json=$(gh api --paginate \
+            "search/code?q=%22ScienceIsNeato%2Fslop-mop-action%22+path%3A.github%2Fworkflows&per_page=100")
           repos=$(echo "$search_json" | python3 -c "
           import json, sys
-          d = json.load(sys.stdin)
-          names = sorted({i['repository']['full_name'] for i in d.get('items', [])})
-          print(json.dumps(names))
+          # --paginate emits one JSON object per page, concatenated; decode
+          # them in sequence and union the repo names across pages.
+          dec = json.JSONDecoder()
+          s = sys.stdin.read().strip()
+          names, idx = set(), 0
+          while idx < len(s):
+              obj, end = dec.raw_decode(s, idx)
+              names.update(i['repository']['full_name'] for i in obj.get('items', []))
+              idx = end
+              while idx < len(s) and s[idx] in ' \n\r\t':
+                  idx += 1
+          print(json.dumps(sorted(names)))
           ")
           count=$(echo "$repos" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 
-          # Dependency-graph dependents (best-effort HTML parse; null on miss).
+          # Dependency-graph dependents (best-effort HTML parse; null on miss —
+          # unlike the search count, this source has no API contract at all).
           dependents=$(curl -fsSL "https://github.com/ScienceIsNeato/slop-mop-action/network/dependents" 2>/dev/null \
             | grep -oE '[0-9,]+[[:space:]]+Repositor(y|ies)' | head -1 | grep -oE '[0-9,]+' | tr -d ',' || true)
           dependents=${dependents:-null}
@@ -67,7 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, datetime
+          import json, os, datetime, pathlib
 
           entry = {
               "date": datetime.date.today().isoformat(),
@@ -79,13 +105,22 @@ jobs:
               ),
               "repos": json.loads(os.environ["REPOS"]),
           }
-          with open("metrics/usage-history.jsonl", "a", encoding="utf-8") as f:
-              f.write(json.dumps(entry) + "\n")
+
+          # Same-date re-runs (manual dispatch, retries) replace that date's
+          # entry — the history stays one line per day.
+          path = pathlib.Path("metrics/usage-history.jsonl")
+          lines = []
+          if path.exists():
+              lines = [
+                  ln
+                  for ln in path.read_text(encoding="utf-8").splitlines()
+                  if ln.strip() and json.loads(ln)["date"] != entry["date"]
+              ]
+          lines.append(json.dumps(entry))
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
           # shields.io endpoint schema — the README badge reads this file.
-          best = max(
-              entry["code_search_repos"], entry["dependents_repos"] or 0
-          )
+          best = max(entry["code_search_repos"], entry["dependents_repos"] or 0)
           badge = {
               "schemaVersion": 1,
               "label": "used by",

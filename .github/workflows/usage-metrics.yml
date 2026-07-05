@@ -59,12 +59,16 @@ jobs:
           repos=$(echo "$search_json" | python3 -c "
           import json, sys
           # --paginate emits one JSON object per page, concatenated; decode
-          # them in sequence and union the repo names across pages.
+          # them in sequence and union the repo names across pages. A page
+          # flagged incomplete_results means the search timed out server-side
+          # — refuse it (exit non-zero) rather than commit a partial count.
           dec = json.JSONDecoder()
           s = sys.stdin.read().strip()
           names, idx = set(), 0
           while idx < len(s):
               obj, end = dec.raw_decode(s, idx)
+              if obj.get('incomplete_results'):
+                  sys.exit('search returned incomplete_results — refusing partial count')
               names.update(i['repository']['full_name'] for i in obj.get('items', []))
               idx = end
               while idx < len(s) and s[idx] in ' \n\r\t':

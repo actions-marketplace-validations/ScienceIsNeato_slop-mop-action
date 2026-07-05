@@ -104,6 +104,7 @@ Use the grade downstream:
 | `slopmop-version` | `==2.11.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
 | `manifest-file` | `.slopmop/required-deps.json` | Committed dependency manifest from `sm doctor --required-deps`. The action installs exactly the tools it lists, by exact pin. |
 | `verify-manifest` | `true` | Fail the run when the committed manifest has drifted from the repo's live gate config. |
+| `project-install` | empty | Shell command that installs the target project's own deps before scanning (e.g. `python -m venv venv && ./venv/bin/pip install -e ".[all]"`). Needed when type-aware gates or dependency auditing should resolve the project's real environment. |
 | `results-file` | `slopmop-results.json` | JSON results file path. |
 | `sarif-file` | `slopmop.sarif` | SARIF file path. |
 | `upload-sarif` | `true` | Upload SARIF with `github/codeql-action/upload-sarif`. |
@@ -157,6 +158,27 @@ manifest, instead of pulling the whole `slopmop[all]` extra:
   `actions/cache`, keyed on OS + resolved Python version + extra +
   `slopmop-version` + **a hash of the manifest**, so a tool repin/add/remove
   invalidates the cache and a plain cache hit skips reinstallation entirely.
+
+### Your project's own dependencies
+
+The action installs slop-mop and its gate tools — **not your project's
+dependencies**. Type-aware gates (pyright/mypy) and dependency auditing resolve
+against the *project* environment (`./venv`, `./.venv`, or `$VIRTUAL_ENV`).
+If your repo's gates need that (Python packages usually do), either provision
+the environment in a workflow step before this action, or let the action do it:
+
+```yaml
+- uses: ScienceIsNeato/slop-mop-action@v2
+  with:
+    command: scour
+    project-install: |
+      python -m venv venv
+      ./venv/bin/pip install -e ".[all]"
+```
+
+Skipping this on a repo that needs it doesn't error — gates quietly analyze
+the wrong environment (phantom unknown-type findings, auditing slop-mop's
+tools instead of your deps). When in doubt, set it.
 
 `slopmop-version` is **pinned by default** (and part of the cache key), so the
 cache refreshes exactly when the pin changes. The Slop-Mop release workflow

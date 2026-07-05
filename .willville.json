@@ -1,7 +1,7 @@
 {
   "agent": {
-    "status": "Pointing the action at the newest slop-mop release so its dependency list picks up the duplicate-string scanner",
-    "direction": "Cut a fresh v2 and confirm the dogfood run is finally warning-free",
-    "last_update": "2026-06-21T00:00:00Z"
+    "status": "Adding an option so the action can set up a project's own dependencies before scanning — closes the gap where some checks quietly looked at the wrong environment",
+    "direction": "Make adopting the action a true drop-in for the remaining repos",
+    "last_update": "2026-07-04T00:00:00Z"
   }
 }

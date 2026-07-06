@@ -1,5 +1,7 @@
 # Slop-Mop GitHub Action
 
+[![Used by](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FScienceIsNeato%2Fslop-mop-action%2Fmain%2Fmetrics%2Fusage-badge.json)](https://github.com/ScienceIsNeato/slop-mop-action/network/dependents)
+
 Run Slop-Mop in GitHub Actions and get a hull grade for the repo.
 
 This repository is intentionally small. The action installs the `slopmop`
@@ -101,7 +103,7 @@ Use the grade downstream:
 | `args` | `--no-auto-fix` | Extra arguments passed to `sm` before action-managed output flags. |
 | `python-version` | `3.12` | Python version used by `actions/setup-python`. |
 | `install-extra` | empty | PyPI extra installed as `slopmop[extra]`. Empty in v2 — gate tools come from the committed manifest, not the broad `all` extra. Set `all` for v1 install-everything behaviour. |
-| `slopmop-version` | `==2.11.0` | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
+| `slopmop-version` | *(latest release)* | Version specifier. Pinned by default for deterministic install caching; the Slop-Mop release workflow bumps it on each release. Must support `sm doctor --required-deps`. See [Gate tools & caching](#gate-tools--caching). |
 | `manifest-file` | `.slopmop/required-deps.json` | Committed dependency manifest from `sm doctor --required-deps`. The action installs exactly the tools it lists, by exact pin. |
 | `verify-manifest` | `true` | Fail the run when the committed manifest has drifted from the repo's live gate config. |
 | `project-install` | empty | Shell command that installs the target project's own deps before scanning (e.g. `python -m venv venv && ./venv/bin/pip install -e ".[all]"`). Needed when type-aware gates or dependency auditing should resolve the project's real environment. |
